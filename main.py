@@ -13,7 +13,7 @@ from typing import Any, Iterable, List, Tuple
 
 import pandas as pd
 import spacy
-from nltk import ngrams
+from nltk import ngrams,word_tokenize, sent_tokenize 
 from tqdm import tqdm
 
 import utils
@@ -134,7 +134,7 @@ https://www.kaggle.com/competitions/nycu-cs-nlp-hw3/discussion
 
 https://github.com/susantabiswas/Word-Prediction-Ngram
 
-
+https://www.kaggle.com/code/alvations/n-gram-language-model-with-nltk/notebook
 '''
 if __name__ == "__main__":
     training_set = LoadTrainSet()

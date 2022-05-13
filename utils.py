@@ -1,7 +1,14 @@
-from typing import Any
+from typing import Any, List,Iterable,Tuple
 import pickle
 import os
+import csv
 
+def argmax(array: Iterable) -> Tuple[int, Any]:
+    index, value = 0, array[0]
+    for i, v in enumerate(array):
+        if v > value:
+            index, value = i, v
+    return index, value
 
 def dump_pkl(data: Any, path: str, force: bool = False):
     if force:
@@ -18,3 +25,11 @@ def load_pkl(path: str) -> Any:
             training_set = pickle.load(P)
             return training_set
     raise FileNotFoundError
+
+
+def dict_writer(obj: dict, path: str):
+    with open(path, 'w') as csv_out:
+        writer = csv.writer(csv_out)
+        writer.writerow(['id', 'label'])
+        for key, value in obj.items():
+            writer.writerow([key, value])
