@@ -2,9 +2,14 @@ from typing import Any, List,Iterable,Tuple
 import pickle
 import os
 import csv
+import random
 
 def argmax(array: Iterable) -> Tuple[int, Any]:
-    index, value = 0, array[0]
+    '''
+    argmax with random initial index
+    '''
+    index = random.choice(list(range(len(array))))
+    value = array[index]
     for i, v in enumerate(array):
         if v > value:
             index, value = i, v
