@@ -348,7 +348,7 @@ if __name__ == "__main__":
     '''
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--ngram", type=int,
-                        help="maximum order of ngram, default=3", choices=[1, 2, 3, 4, 5], default=3)
+                        help="maximum order of ngram, default=4", choices=[1, 2, 3, 4, 5], default=4)
     parser.add_argument("-s", "--submit", type=str,
                         help="for only generating kaggle submission, default to 'false': train and validate", default='false')
     parser.add_argument("-a", "--analysis", type=str,
