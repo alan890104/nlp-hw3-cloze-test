@@ -7,10 +7,12 @@ import string
 from glob import glob
 from typing import Any, Dict, List, Tuple, Union
 
-from nltk.lm import MLE, KneserNeyInterpolated, Laplace, WittenBellInterpolated
-from nltk.lm.preprocessing import padded_everygram_pipeline,everygrams
-from tqdm import tqdm
 import spacy
+from nltk.lm import MLE, KneserNeyInterpolated, Laplace, WittenBellInterpolated
+from nltk.lm.preprocessing import everygrams, padded_everygram_pipeline
+from nltk.util import flatten
+from tqdm import tqdm
+
 import utils
 
 # Type define
@@ -145,19 +147,9 @@ def Train(n_gram: int, tknz: List[List[str]], model: Union[str, Model] = "MLE", 
     assert model in ["MLE", "Laplace", "KneserNeyInterpolated",
                      "WittenBellInterpolated"] or model in [MLE, Laplace, KneserNeyInterpolated, WittenBellInterpolated], "undefined model type"
     print("- Start Padding")
-    train_data, padded_sents = padded_everygram_pipeline(n_gram, tknz)
-    # possible_grams = list(everygrams(tknz,max_len=n_gram))
-    #
-    #
-    #
-    #
-    #
-    #
-    ###
-    #
-    ##
-    #
-
+    # train_data, padded_sents = padded_everygram_pipeline(n_gram, tknz)
+    all_grams = [list(everygrams(tz,max_len=n_gram)) for tz in tknz]
+    all_vocab = flatten(tknz)
     print("- Start Training with model {}".format(model))
     basic_model: Model
     if model == "MLE" or model == MLE:
@@ -168,7 +160,7 @@ def Train(n_gram: int, tknz: List[List[str]], model: Union[str, Model] = "MLE", 
         basic_model = KneserNeyInterpolated(ngram, **kwargs)
     elif model == "WittenBellInterpolated" or model == WittenBellInterpolated:
         basic_model = WittenBellInterpolated(ngram, **kwargs)
-    basic_model.fit(train_data, padded_sents)
+    basic_model.fit(all_grams, all_vocab)
     return basic_model
 
 
@@ -299,8 +291,19 @@ def Analysis(path: str):
     Find top ten words with/without stop words
     '''
     model: Model = utils.load_pkl(path)
-    # print(preprocess("he is my husband----------------a sanders.she is a doctor."))
-    print(model.vocab.counts.most_common(10))
+    most = model.vocab.counts.most_common(10)
+    maximum = max([v for _,v in most])
+    print("===============MOST COMMON==================")
+    for k, v in most:
+        print("{:<15s}\t{:<20s}\t{}".format(k,'█'*int((v/maximum)*20),v))
+    print("================Generation===================")
+    sent1:str = model.generate(15,text_seed=['this','is'])
+    sent2:str = model.generate(15,text_seed=['he','said'])
+    sent3:str = model.generate(15,text_seed=['she','said'])
+    print(" * Sentence1:\n\t{}".format(' '.join(sent1)))
+    print(" * Sentence2:\n\t{}".format(' '.join(sent2)))
+    print(" * Sentence3:\n\t{}".format(' '.join(sent3)))
+    print("=============================================")
 
 
 '''
@@ -376,6 +379,7 @@ if __name__ == "__main__":
             for model_name in models:
                 score = 0
                 for i in range(epoch):
+                    DEBUG_ALL_ZERO = 0
                     training_set, testing_set = TrainTestSplit(
                         dataset, test_size=0.3)
                     training_set = ResolveTrainingSet(training_set)

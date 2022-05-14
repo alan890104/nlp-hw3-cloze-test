@@ -4,7 +4,7 @@ from nltk.lm.preprocessing import padded_everygram_pipeline,everygrams
 
 from nltk.lm import Vocabulary,MLE
 
-
+from nltk.util import flatten
 
 NLP = spacy.load('en_core_web_sm', disable=["tok2vec", "ner", "textcat"])
 
