@@ -8,7 +8,7 @@ from glob import glob
 from typing import Any, Dict, List, Tuple, Union
 
 from nltk.lm import MLE, KneserNeyInterpolated, Laplace, WittenBellInterpolated
-from nltk.lm.preprocessing import padded_everygram_pipeline,everygrams
+from nltk.lm.preprocessing import padded_everygram_pipeline
 from tqdm import tqdm
 import spacy
 import utils
@@ -104,6 +104,8 @@ def preprocess(context: str) -> List[List[Union[str, Any]]]:
     # TODO : 刪掉兩個 - 以上的
     # TODO : 刪除前綴和後綴的-
     # TODO : 由於有些字母依然會包含 . 所沒有在EXCEPTION_DOT中的要做split把點去掉
+
+    # TODO : no stopwords
     result: List[List[Union[str, Any]]] = []
     context = re.sub('\d+', " ", context)
     context = re.sub(r"[^\w' ,._-]", " ", context)
@@ -114,7 +116,7 @@ def preprocess(context: str) -> List[List[Union[str, Any]]]:
     docs = NLP(context)
     for sent in docs.sents:
         tkn = [x.lower_ for x in sent if (not x.is_space)
-               and (not x.lower_ in PUNCTUATON)]
+               and (not x.lower_ in PUNCTUATON) and (not x.is_stop)]
         clean: List[str] = []
         for dirty in tkn:
             if dirty in EXCEPTION_DOT:
@@ -146,18 +148,6 @@ def Train(n_gram: int, tknz: List[List[str]], model: Union[str, Model] = "MLE", 
                      "WittenBellInterpolated"] or model in [MLE, Laplace, KneserNeyInterpolated, WittenBellInterpolated], "undefined model type"
     print("- Start Padding")
     train_data, padded_sents = padded_everygram_pipeline(n_gram, tknz)
-    # possible_grams = list(everygrams(tknz,max_len=n_gram))
-    #
-    #
-    #
-    #
-    #
-    #
-    ###
-    #
-    ##
-    #
-
     print("- Start Training with model {}".format(model))
     basic_model: Model
     if model == "MLE" or model == MLE:
@@ -209,15 +199,9 @@ def getMaximumScore(model: Model, max_ngram: int, start_row: int, start_idx: int
         subset: List[str] = article_token[row][max(0, idx-max_ngram+1):idx]
         assert len(subset) <= max_ngram-1, "lenght of subset({}) needs to be equal to or less than max_ngram-1({})".format(
             len(subset), max_ngram-1)
-        # Perform lemmatize on each option (maybe apply on NOUN?)
+        # Perform lemmatize on each option
         lower_op = NLP(op)[0].lower_
-        if idx>0 and idx<len(article_token[row])-1:
-            # TODO : 計算maxScore時不只以 XX_ 的方式取得ngram的score, 也同時考慮 _XX 和 X_X
-            middle: List[str] = subset + [lower_op]
-            next_word: str = article_token[row][idx+1]
-            score = (model.score(lower_op, subset) + model.score(next_word,middle))/2
-        else:
-            score = model.score(lower_op, subset)
+        score = model.score(lower_op, subset)
         scores[i] = (score)
 
     if all(s == 0 for s in scores):
@@ -325,18 +309,16 @@ https://medium.com/pyladies-taiwan/nltk-%E5%88%9D%E5%AD%B8%E6%8C%87%E5%8D%97-%E4
 '''
 if __name__ == "__main__":
     # Models: ["MLE", "Laplace", "KneserNeyInterpolated","WittenBellInterpolated"]
-
+    # TODO : 觀察 lemmatize的影響，降低precision&提升recall的比重是否合理 (options時態)
     # TODO : 考慮 dep帶來的grams
+    # TODO : 觀察 使用/不使用 stop words 之後的 統計前10名和accuracy
+    # TODO : 觀察 全部四個選項為0的比率占多少(代表其他都是random湊的)
     # TODO : 如果全部為0的比率很高，觀察加入external corpus能提升多少accuracy
-    
+    # TODO : 計算maxScore時不只以 XX_ 的方式取得ngram的score, 也同時考慮 _XX 和 X_X
 
-    # Solve : 觀察 使用/不使用 stop words 之後的 統計前10名和accuracy
-    # Solve : 觀察 全部四個選項為0的比率占多少(代表其他都是random湊的), 在MLE是14000左右
-    # Solve : lemmatize可能只能對名詞用
-
-    # Bug [ok] : spacy 無法分辨破折號 "he is my husband----------------a sanders.she is a doctor."
+    # Bug [ ] : spacy 無法分辨破折號 "he is my husband----------------a sanders.she is a doctor."
     # Bug [ok] : spacy 句號沒辦法分開: 不可以先用lower再用nlp, 模型無法分辨大小寫。
-    # BUg [  ]: mother's will be [mother,'s]
+    # BUg : mother's will be [mother,'s]
 
     '''
     Train      Mode: python ./test.py -m [model name]

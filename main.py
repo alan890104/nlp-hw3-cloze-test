@@ -2,7 +2,6 @@
 # Student ID: 0716235
 # HW ID: Hw3
 # Due Date: 05/19/2022
-
 import argparse
 import json
 import os
@@ -118,7 +117,7 @@ def preprocess(context: str) -> List[List[Union[str, Any]]]:
     context = context.rstrip('-')
     docs = NLP(context)
     for sent in docs.sents:
-        tkn = [x.lemma_.lower() for x in sent if (not x.is_space)
+        tkn = [x.lower_ for x in sent if (not x.is_space)
                and (not x.lower_ in PUNCTUATON)]
         clean: List[str] = []
         for dirty in tkn:
@@ -203,7 +202,7 @@ def getMaximumScore(model: Model, max_ngram: int, start_row: int, start_idx: int
         assert len(subset) <= max_ngram-1, "lenght of subset({}) needs to be equal to or less than max_ngram-1({})".format(
             len(subset), max_ngram-1)
         # Perform lemmatize on each option
-        lemma_op = NLP(op)[0].lemma_.lower()
+        lemma_op = NLP(op)[0].lower_
         score = model.score(lemma_op, subset)
         scores[i] = (score)
 
@@ -287,7 +286,7 @@ def Analysis(path: str):
     '''
     model: Model = utils.load_pkl(path)
     # print(preprocess("he is my husband----------------a sanders.she is a doctor."))
-    print(model.vocab.counts.most_common(10))
+    print([x for x in model.counts.unigrams])
 
 
 '''
