@@ -2,25 +2,33 @@ import argparse
 import json
 import os
 import random
+import re
 import string
 from glob import glob
-from itertools import combinations
-from typing import Any, Dict, Iterable, List, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
-from nltk import sent_tokenize, word_tokenize
 from nltk.lm import MLE, KneserNeyInterpolated, Laplace, WittenBellInterpolated
-from nltk.lm.preprocessing import  padded_everygram_pipeline
+from nltk.lm.preprocessing import padded_everygram_pipeline
 from tqdm import tqdm
 import spacy
 import utils
 
+# Type define
+Model = Union[MLE, Laplace, KneserNeyInterpolated, WittenBellInterpolated]
 
+# Rules define
 PUNCTUATON = set(string.punctuation)
 PUNCTUATON.remove('_')
 
-NLP = spacy.load('en_core_web_trf')
+EXCEPTION_DOT = {"a.m.", "p.m.", "e.g.",
+                 "mr.", "ms.", "mrs.", "dr.", "st.", "u.s."}
 
-Model = Union[MLE, Laplace, KneserNeyInterpolated, WittenBellInterpolated]
+# Global Variable
+assert spacy.prefer_gpu(), "Cannot run with gpu"
+NLP = spacy.load('en_core_web_sm', disable=["tok2vec", "ner", "textcat"])
+
+# Dubug Variable
+DEBUG_ALL_ZERO = 0
 
 
 def LoadRawJson() -> List[dict]:
@@ -91,13 +99,31 @@ def preprocess(context: str) -> List[List[Union[str, Any]]]:
     '''
     prepocess text for tokenizing
     '''
+    # TODO : 先對context做去除所有符號和數字並且保留符號 ' , . _ -和空格
+    # TODO : 刪掉兩個 . 以上的
+    # TODO : 刪掉兩個 - 以上的
+    # TODO : 刪除前綴和後綴的-
+    # TODO : 由於有些字母依然會包含 . 所沒有在EXCEPTION_DOT中的要做split把點去掉
     result: List[List[Union[str, Any]]] = []
-    sents = [x for x in [word_tokenize(sent)
-                         for sent in sent_tokenize(context.lower())]]
-    for sent in sents:
-        val: List[Union[str, Any]] = [x for x in sent if x not in PUNCTUATON]
-        result.append(val)
-
+    context = re.sub('\d+', " ", context)
+    context = re.sub(r"[^\w' ,._-]", " ", context)
+    context = re.sub(r'(\.){2,}', ' ', context)
+    context = re.sub(r'(-){2,}', ' ', context)
+    context = context.lstrip('-')
+    context = context.rstrip('-')
+    docs = NLP(context)
+    for sent in docs.sents:
+        tkn = [x.lemma_.lower() for x in sent if (not x.is_space)
+               and (not x.lower_ in PUNCTUATON)]
+        clean: List[str] = []
+        for dirty in tkn:
+            if dirty in EXCEPTION_DOT:
+                clean.append(dirty)
+            else:
+                for d in dirty.split('.'):
+                    if len(d) > 0:
+                        clean.append(d)
+        result.append(clean)
     return result
 
 
@@ -156,6 +182,7 @@ def getMaximumScore(model: Model, max_ngram: int, start_row: int, start_idx: int
     return (argmax element,new start_row, new start_idx)
     NOTE: the article_token will be modified
     '''
+    global DEBUG_ALL_ZERO
     idx: int = start_idx
     row: int = start_row
     while True:
@@ -167,13 +194,17 @@ def getMaximumScore(model: Model, max_ngram: int, start_row: int, start_idx: int
             row += 1
     scores: List[int] = [0] * len(ops)
     for i, op in enumerate(ops):
-        subset: List[str] = []
-        subset.extend(article_token[row][max(0, idx-max_ngram+1):idx])
+        subset: List[str] = article_token[row][max(0, idx-max_ngram+1):idx]
         assert len(subset) <= max_ngram-1, "lenght of subset({}) needs to be equal to or less than max_ngram-1({})".format(
             len(subset), max_ngram-1)
-        lower_op = op.lower()
-        score = model.score(lower_op, subset)
+        # Perform lemmatize on each option
+        lemma_op = NLP(op)[0].lemma_.lower()
+        score = model.score(lemma_op, subset)
         scores[i] = (score)
+
+    if all(s == 0 for s in scores):
+        DEBUG_ALL_ZERO += 1
+
     argmax_i, _ = utils.argmax(scores)
     article_token[row][idx] = ops[argmax_i]
     return argmax_i, row, idx
@@ -227,11 +258,12 @@ def Evaluation(pred: Dict[str, str], actual: Dict[str, str]):
         for p in range(labels):
             print("{:<7d}".format(metric[a][p]), end='')
         print()
+    print("All zero rate: {}".format(DEBUG_ALL_ZERO))
     print("====================================")
     return accuracy, precision, recall, f1_score
 
 
-def Solve(model: Model, n_gram: int, path: str = "result.csv"):
+def Solve(model: Model, n_gram: int, path: str = "result.csv") -> Dict[str, str]:
     dataset: List[dict] = []
     test_list = glob(os.path.join("./hw3/test", "*.json"))
     print("- Start Solving")
@@ -241,56 +273,112 @@ def Solve(model: Model, n_gram: int, path: str = "result.csv"):
             dataset.append(question)
     answer_dict = Prediction(model, n_gram, dataset)
     utils.dict_writer(answer_dict, path)
+    return answer_dict
+
+
+def Analysis(path: str):
+    '''
+    Find top ten words with/without stop words
+    '''
+    model: Model = utils.load_pkl(path)
+    # print(preprocess("he is my husband----------------a sanders.she is a doctor."))
+    print(model.vocab.counts.most_common(10))
+
 
 '''
 Lemmatize
 https://www.machinelearningplus.com/nlp/lemmatization-examples-python/
+
+Amazon ngram
+https://rstudio-pubs-static.s3.amazonaws.com/96252_bd61a0777ad44d04b619ce95ca44219c.html
+
+Preprocess
+https://necromuralist.github.io/Neurotic-Networking/posts/nlp/n-gram-pre-processing/#orgefb0272
+
+Next word prediction 
+https://juan0001.github.io/next-word-prediction/
+
+
+Data spareness
+https://aclanthology.org/O01-1002.pdf
+
+https://medium.com/pyladies-taiwan/nltk-%E5%88%9D%E5%AD%B8%E6%8C%87%E5%8D%97-%E4%BA%8C-%E7%94%B1%E5%A4%96%E8%80%8C%E5%85%A7-%E5%BE%9E%E8%AA%9E%E6%96%99%E5%BA%AB%E5%88%B0%E5%AD%97%E8%A9%9E%E6%8B%86%E8%A7%A3-%E4%B8%8A%E6%89%8B%E7%AF%87-e9c632d2b16a
+
 '''
 if __name__ == "__main__":
     # Models: ["MLE", "Laplace", "KneserNeyInterpolated","WittenBellInterpolated"]
+    # TODO : 觀察 lemmatize的影響，降低precision&提升recall的比重是否合理 (options時態)
+    # TODO : 考慮 dep帶來的grams
+    # TODO : 觀察 使用/不使用 stop words 之後的 統計前10名和accuracy
+    # TODO : 觀察 全部四個選項為0的比率占多少(代表其他都是random湊的)
+    # TODO : 如果全部為0的比率很高，觀察加入external corpus能提升多少accuracy
+    # TODO : 計算maxScore時不只以 XX_ 的方式取得ngram的score, 也同時考慮 _XX 和 X_X
 
+    # Bug [ ] : spacy 無法分辨破折號 "he is my husband----------------a sanders.she is a doctor."
+    # Bug [ok] : spacy 句號沒辦法分開: 不可以先用lower再用nlp, 模型無法分辨大小寫。
+    # BUg : mother's will be [mother,'s]
+
+    '''
+    Train      Mode: python ./test.py -m [model name]
+    Generate   Mode: python ./test.py -s true -m WittenBellInterpolated
+    Analysis   Mode: python ./test.py -a true 
+    '''
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--ngram", type=int,
                         help="maximum order of ngram, default=3", choices=[1, 2, 3, 4, 5], default=3)
     parser.add_argument("-s", "--submit", type=str,
-                        help="for only generating kaggle submission, default to 'false': train and validate", default=False)
-    parser.add_argument("-m", "--model", type=str, help="declare model name(works when --submit is true), default to MLE",
-                        choices=["MLE", "Laplace", "KneserNeyInterpolated", "WittenBellInterpolated"], default="MLE")
+                        help="for only generating kaggle submission, default to 'false': train and validate", default='false')
+    parser.add_argument("-a", "--analysis", type=str,
+                        help="analysis tools when submit is false, default to 'false': train and validate", default='')
+    parser.add_argument("-m", "--models", type=str, nargs='+', help="declare model name, default to run all",
+                        choices=["MLE", "Laplace", "KneserNeyInterpolated", "WittenBellInterpolated"], default=["MLE", "Laplace", "KneserNeyInterpolated", "WittenBellInterpolated"])
     parser.add_argument("-e", "--epoch", type=int,
                         help="epoch of training(works when --submit is false), default to 5", default=5)
     args = parser.parse_args()
 
     # Configuration
-    ngram = args.ngram
-    epoch = args.epoch
-    model_name = args.model
-    submit = args.submit=='true'
+    ngram: int = args.ngram
+    epoch: int = args.epoch
+    models: List[str] = args.models
+    analysis_path: str = args.analysis
+    submit: bool = args.submit == 'true'
 
     # Train & Validate
     if not submit:
-        dataset = LoadRawJson()
-        history = {"MLE": 0, "Laplace": 0,
-                   "KneserNeyInterpolated": 0, "WittenBellInterpolated": 0}
-        for model_name in ["WittenBellInterpolated"]:
-            score = 0
-            for i in range(epoch):
-                training_set, testing_set = TrainTestSplit(
-                    dataset, test_size=0.3)
-                training_set = ResolveTrainingSet(training_set)
-                testing_set, actual = ResolveTestingSet(testing_set)
-                model = Train(ngram, Tokenizer(training_set), model_name)
-                preds = Prediction(model, ngram, testing_set)
-                acc, _, _, _ = Evaluation(preds, actual)
-                score += acc
-                utils.dump_pkl(
-                    model, "./hw3/model/{}_{}_{}".format(model_name, int(acc*100), i))
-            history[model_name] = round(score/epoch, 4)
-        utils.dict_writer(history, "history.csv")
+        if analysis_path != "":
+            Analysis(analysis_path)
+        else:
+            dataset = LoadRawJson()
+            history = {"MLE": 0, "Laplace": 0,
+                       "KneserNeyInterpolated": 0, "WittenBellInterpolated": 0}
+            pending_model: List[str] = ["MLE", "Laplace",
+                                        "KneserNeyInterpolated", "WittenBellInterpolated"]
+            for model_name in models:
+                score = 0
+                for i in range(epoch):
+                    training_set, testing_set = TrainTestSplit(
+                        dataset, test_size=0.3)
+                    training_set = ResolveTrainingSet(training_set)
+                    testing_set, actual = ResolveTestingSet(testing_set)
+                    model = Train(ngram, Tokenizer(training_set), model_name)
+                    preds = Prediction(model, ngram, testing_set)
+                    acc, _, _, _ = Evaluation(preds, actual)
+                    score += acc
+                    utils.dump_pkl(
+                        model, "./hw3/model/{}_{}_{}".format(model_name, int(acc*100), i))
+                history[model_name] = round(score/epoch, 4)
+            utils.dict_writer(history, "history.csv")
 
     # Generation
     else:
+        # This is my birthday
+        random.seed(890104)
         dataset = LoadRawJson()
         training_set = ResolveTrainingSet(dataset)
-        model = Train(ngram, Tokenizer(training_set), model_name)
-        Solve(model, ngram, "result_{}_ngram{}.csv".format(model_name, ngram))
-        utils.dump_pkl(model, "./hw3/model/generate_{}.pkl".format(model_name))
+        tknz = Tokenizer(training_set)
+        for model_name in models:
+            model = Train(ngram, tknz, model_name)
+            ans = Solve(model, ngram, "result_{}_ngram{}.csv".format(model_name, ngram))
+            utils.dump_pkl(model, "./hw3/model/generate_{}.pkl".format(model_name))
+            print("===============INFORMATION===============")
+            print("All zero rate: {}".format(round(DEBUG_ALL_ZERO/len(ans),2)))

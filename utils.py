@@ -32,9 +32,9 @@ def load_pkl(path: str) -> Any:
     raise FileNotFoundError
 
 
-def dict_writer(obj: dict, path: str):
-    with open(path, 'w') as csv_out:
+def dict_writer(obj: dict, path: str,header:List[str]=['id', 'label']):
+    with open(path, 'w',newline='') as csv_out:
         writer = csv.writer(csv_out)
-        writer.writerow(['id', 'label'])
+        writer.writerow(header)
         for key, value in obj.items():
             writer.writerow([key, value])
