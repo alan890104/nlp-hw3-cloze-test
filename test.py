@@ -8,6 +8,7 @@ from glob import glob
 from typing import Any, Dict, List, Tuple, Union
 
 import spacy
+from spacy.tokens import Doc, Span, Token
 from nltk.lm import MLE, KneserNeyInterpolated, Laplace, WittenBellInterpolated
 from nltk.lm.preprocessing import everygrams, padded_everygram_pipeline
 from nltk.util import flatten
@@ -97,7 +98,7 @@ def ResolveTestingSet(dataset: List[dict]) -> Tuple[List[Dict[str, str]], Dict[s
     return testing_set, answers_set
 
 
-def preprocess(context: str) -> List[List[Union[str, Any]]]:
+def preprocess(context: str) -> Tuple[List[List[Union[str, Any]]], ]:
     '''
     prepocess text for tokenizing
     '''
@@ -106,6 +107,7 @@ def preprocess(context: str) -> List[List[Union[str, Any]]]:
     # TODO : 刪掉兩個 - 以上的
     # TODO : 刪除前綴和後綴的-
     # TODO : 由於有些字母依然會包含 . 所沒有在EXCEPTION_DOT中的要做split把點去掉
+    # TODO : 只對NOUN和VERB(不包含AUX)做lemmatize
     result: List[List[Union[str, Any]]] = []
     context = re.sub('\d+', " ", context)
     context = re.sub(r"[^\w' ,._-]", " ", context)
@@ -115,8 +117,16 @@ def preprocess(context: str) -> List[List[Union[str, Any]]]:
     context = context.rstrip('-')
     docs = NLP(context)
     for sent in docs.sents:
-        tkn = [x.lower_ for x in sent if (not x.is_space)
-               and (not x.lower_ in PUNCTUATON)]
+        tkn = []
+        for x in sent:
+            if x.is_space or x.text in PUNCTUATON:
+                continue
+            elif x.pos_ in {"VERB", "NOUN"}:
+                tkn.append(x.lemma_.lower())
+            else:
+                tkn.append(x.lower_)
+        tkn = [x.lower_ for x in sent if (
+            not x.is_space) and (not x.lower_ in PUNCTUATON)]
         clean: List[str] = []
         for dirty in tkn:
             if dirty in EXCEPTION_DOT:
@@ -148,7 +158,7 @@ def Train(n_gram: int, tknz: List[List[str]], model: Union[str, Model] = "MLE", 
                      "WittenBellInterpolated"] or model in [MLE, Laplace, KneserNeyInterpolated, WittenBellInterpolated], "undefined model type"
     print("- Start Padding")
     # train_data, padded_sents = padded_everygram_pipeline(n_gram, tknz)
-    all_grams = [list(everygrams(tz,max_len=n_gram)) for tz in tknz]
+    all_grams = [list(everygrams(tz, max_len=n_gram)) for tz in tknz]
     all_vocab = flatten(tknz)
     print("- Start Training with model {}".format(model))
     basic_model: Model
@@ -203,11 +213,12 @@ def getMaximumScore(model: Model, max_ngram: int, start_row: int, start_idx: int
             len(subset), max_ngram-1)
         # Perform lemmatize on each option (maybe apply on NOUN?)
         lower_op = NLP(op)[0].lower_
-        if idx>0 and idx<len(article_token[row])-1:
+        if idx > 0 and idx < len(article_token[row])-1:
             # TODO : 計算maxScore時不只以 XX_ 的方式取得ngram的score, 也同時考慮 _XX 和 X_X
             middle: List[str] = subset + [lower_op]
             next_word: str = article_token[row][idx+1]
-            score = (model.score(lower_op, subset) + model.score(next_word,middle))/2
+            score = (model.score(lower_op, subset) +
+                     model.score(next_word, middle))/2
         else:
             score = model.score(lower_op, subset)
         scores[i] = (score)
@@ -292,14 +303,14 @@ def Analysis(path: str):
     '''
     model: Model = utils.load_pkl(path)
     most = model.vocab.counts.most_common(10)
-    maximum = max([v for _,v in most])
+    maximum = max([v for _, v in most])
     print("===============MOST COMMON==================")
     for k, v in most:
-        print("{:<15s}\t{:<20s}\t{}".format(k,'█'*int((v/maximum)*20),v))
+        print("{:<15s}\t{:<20s}\t{}".format(k, '█'*int((v/maximum)*20), v))
     print("================Generation===================")
-    sent1:str = model.generate(15,text_seed=['this','is'])
-    sent2:str = model.generate(15,text_seed=['he','said'])
-    sent3:str = model.generate(15,text_seed=['she','said'])
+    sent1: str = model.generate(15, text_seed=['this', 'is'])
+    sent2: str = model.generate(15, text_seed=['he', 'said'])
+    sent3: str = model.generate(15, text_seed=['she', 'said'])
     print(" * Sentence1:\n\t{}".format(' '.join(sent1)))
     print(" * Sentence2:\n\t{}".format(' '.join(sent2)))
     print(" * Sentence3:\n\t{}".format(' '.join(sent3)))
@@ -331,7 +342,6 @@ if __name__ == "__main__":
 
     # TODO : 考慮 dep帶來的grams
     # TODO : 如果全部為0的比率很高，觀察加入external corpus能提升多少accuracy
-    
 
     # Solve : 觀察 使用/不使用 stop words 之後的 統計前10名和accuracy
     # Solve : 觀察 全部四個選項為0的比率占多少(代表其他都是random湊的), 在MLE是14000左右
@@ -402,7 +412,10 @@ if __name__ == "__main__":
         tknz = Tokenizer(training_set)
         for model_name in models:
             model = Train(ngram, tknz, model_name)
-            ans = Solve(model, ngram, "result_{}_ngram{}.csv".format(model_name, ngram))
-            utils.dump_pkl(model, "./hw3/model/generate_{}.pkl".format(model_name))
+            ans = Solve(model, ngram, "result_{}_ngram{}.csv".format(
+                model_name, ngram))
+            utils.dump_pkl(
+                model, "./hw3/model/generate_{}.pkl".format(model_name))
             print("===============INFORMATION===============")
-            print("All zero rate: {}".format(round(DEBUG_ALL_ZERO/len(ans),2)))
+            print("All zero rate: {}".format(
+                round(DEBUG_ALL_ZERO/len(ans), 2)))
