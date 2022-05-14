@@ -1,3 +1,8 @@
+# Author: Yu-Lun Hsu
+# Student ID: 0716235
+# HW ID: Hw3
+# Due Date: 05/19/2022
+
 import argparse
 import json
 import os
