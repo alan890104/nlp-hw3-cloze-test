@@ -48,6 +48,19 @@ def LoadRawJson() -> List[dict]:
             pbar.update(1)
     return raw
 
+def LoadExternalCorpus(max_amount:int=50000)->List[str]:
+    '''
+    Return external training set of cnn data
+    '''
+    result: List[str]= []
+    print("- Start Loading External Training Set [CNN]")
+    external = glob("./cnn_stories_tokenized/*.story")
+    with tqdm(total=max_amount) as pbar:
+        for e in external[:max_amount]:
+            with open(e, 'r',encoding="utf-8") as F:
+                result.append(F.read())
+            pbar.update(1)
+    return result
 
 def TrainTestSplit(dataset: List[dict], test_size: Union[int, float] = 0.1, seed: int = None) -> Tuple[list, list]:
     random.seed(seed)
@@ -117,12 +130,14 @@ def preprocess(context: str) -> Tuple[List[List[Union[str, Any]]], ]:
     # TODO : 先對context做去除所有符號和數字並且保留符號 ' , . _ -和空格
     # TODO : 刪掉兩個 . 以上的
     # TODO : 刪掉兩個 - 以上的
+    # TODO : 刪掉兩個 ' 以上的
     # TODO : 刪除前綴和後綴的-
     # TODO : 由於有些字母依然會包含 . 所沒有在EXCEPTION_DOT中的要做split把點去掉
     result: List[List[Union[str, Any]]] = []
     context = re.sub('\d+', " ", context)
     context = re.sub(r"[^\w' ,._-]", " ", context)
     context = re.sub(r'(\.){2,}', ' ', context)
+    context = re.sub(r'(\'){2,}', ' ', context)
     context = re.sub(r'(-){2,}', ' ', context)
     context = context.lstrip('-')
     context = context.rstrip('-')
@@ -367,6 +382,9 @@ https://medium.com/pyladies-taiwan/nltk-%E5%88%9D%E5%AD%B8%E6%8C%87%E5%8D%97-%E4
 Datasets
 https://github.com/JafferWilson/Process-Data-of-CNN-DailyMail
 
+Introducing About Interpolations
+https://www.cl.uni-heidelberg.de/courses/ss15/smt/scribe6.pdf
+
 '''
 if __name__ == "__main__":
     # Models: ["MLE", "Laplace", "KneserNeyInterpolated","WittenBellInterpolated"]
@@ -413,6 +431,7 @@ if __name__ == "__main__":
             Analysis(analysis_path)
         else:
             dataset = LoadRawJson()
+            extra_training_set = LoadExternalCorpus()
             history = {"MLE": 0, "Laplace": 0,
                        "KneserNeyInterpolated": 0, "WittenBellInterpolated": 0}
             pending_model: List[str] = ["MLE", "Laplace",
@@ -424,6 +443,7 @@ if __name__ == "__main__":
                     training_set, testing_set = TrainTestSplit(
                         dataset, test_size=0.3)
                     training_set = ResolveTrainingSet(training_set)
+                    training_set += extra_training_set
                     testing_set, actual = ResolveTestingSet(testing_set)
                     model = Train(ngram, Tokenizer(training_set), model_name)
                     preds = Prediction(model, ngram, testing_set)
@@ -439,8 +459,9 @@ if __name__ == "__main__":
         # This is my birthday
         random.seed(890104)
         dataset = LoadRawJson()
+        extra_training_set = LoadExternalCorpus()
         training_set = ResolveTrainingSet(dataset)
-        tknz = Tokenizer(training_set)
+        tknz = Tokenizer(training_set+extra_training_set)
         for model_name in models:
             model = Train(ngram, tknz, model_name)
             ans = Solve(model, ngram, "result_{}_ngram{}.csv".format(
