@@ -26,6 +26,8 @@ PUNCTUATON.remove('_')
 EXCEPTION_DOT = {"a.m.", "p.m.", "e.g.",
                  "mr.", "ms.", "mrs.", "dr.", "st.", "u.s."}
 
+LEMMA_GROUP = {"VERB","NOUN"}
+
 # Global Variable
 assert spacy.prefer_gpu(), "Cannot run with gpu"
 NLP = spacy.load('en_core_web_sm', disable=["tok2vec", "ner", "textcat"])
@@ -66,8 +68,8 @@ def TrainTestSplit(dataset: List[dict], test_size: Union[int, float] = 0.1, seed
     return train_set, test_set
 
 
-def ResolveTrainingSet(dataset: List[dict]) -> List[List[str]]:
-    training_set: List[List[str]] = []
+def ResolveTrainingSet(dataset: List[dict]) -> List[str]:
+    training_set: List[str] = []
     for data in dataset:
         result: str = data["article"]
         answers: List[str] = [data["answers"][_]
@@ -97,6 +99,16 @@ def ResolveTestingSet(dataset: List[dict]) -> Tuple[List[Dict[str, str]], Dict[s
         })
     return testing_set, answers_set
 
+def is_verb(token: Token) -> bool:
+    '''
+    determine whether a token is a verb (ignore AUX with their head is VERB)
+    ex: "I have been watching Namin for a year." =>  return (watching, )
+    '''
+    if token.pos_ == "VERB":
+        return True
+    if token.pos_ == "AUX" and token.head.pos_ != "VERB":
+        return True
+    return False
 
 def preprocess(context: str) -> Tuple[List[List[Union[str, Any]]], ]:
     '''
@@ -107,7 +119,6 @@ def preprocess(context: str) -> Tuple[List[List[Union[str, Any]]], ]:
     # TODO : 刪掉兩個 - 以上的
     # TODO : 刪除前綴和後綴的-
     # TODO : 由於有些字母依然會包含 . 所沒有在EXCEPTION_DOT中的要做split把點去掉
-    # TODO : 只對NOUN和VERB(不包含AUX)做lemmatize
     result: List[List[Union[str, Any]]] = []
     context = re.sub('\d+', " ", context)
     context = re.sub(r"[^\w' ,._-]", " ", context)
@@ -116,15 +127,19 @@ def preprocess(context: str) -> Tuple[List[List[Union[str, Any]]], ]:
     context = context.lstrip('-')
     context = context.rstrip('-')
     docs = NLP(context)
+    verbs:List[Token] = []
+    # Do normal process
     for sent in docs.sents:
         tkn = []
         for x in sent:
             if x.is_space or x.text in PUNCTUATON:
                 continue
-            elif x.pos_ in {"VERB", "NOUN"}:
+            elif x.pos_ in LEMMA_GROUP:
+                # TODO : 只對NOUN和VERB(不包含AUX)做lemmatize
                 tkn.append(x.lemma_.lower())
             else:
                 tkn.append(x.lower_)
+            if is_verb(x): verbs.append(x)
         tkn = [x.lower_ for x in sent if (
             not x.is_space) and (not x.lower_ in PUNCTUATON)]
         clean: List[str] = []
@@ -136,6 +151,18 @@ def preprocess(context: str) -> Tuple[List[List[Union[str, Any]]], ]:
                     if len(d) > 0:
                         clean.append(d)
         result.append(clean)
+
+    # TODO : Add Dependency context (only verb)
+    deps:List[List[str]] = []
+    for v in verbs:
+        for left in v.lefts:
+            elem = left.lemma_ if x.pos_ in LEMMA_GROUP else left.lower_
+            deps.append([elem, v.lemma_])
+        for right in v.rights:
+            elem = right.lemma_ if x.pos_ in  LEMMA_GROUP else right.lower_
+            deps.append([v.lemma_, elem])
+    result.extend(deps)
+    
     return result
 
 
@@ -167,9 +194,9 @@ def Train(n_gram: int, tknz: List[List[str]], model: Union[str, Model] = "MLE", 
     elif model == "Laplace" or model == Laplace:
         basic_model = Laplace(n_gram, **kwargs)
     elif model == "KneserNeyInterpolated" or model == KneserNeyInterpolated:
-        basic_model = KneserNeyInterpolated(ngram, **kwargs)
+        basic_model = KneserNeyInterpolated(n_gram, **kwargs)
     elif model == "WittenBellInterpolated" or model == WittenBellInterpolated:
-        basic_model = WittenBellInterpolated(ngram, **kwargs)
+        basic_model = WittenBellInterpolated(n_gram, **kwargs)
     basic_model.fit(all_grams, all_vocab)
     return basic_model
 
@@ -335,6 +362,10 @@ Data spareness
 https://aclanthology.org/O01-1002.pdf
 
 https://medium.com/pyladies-taiwan/nltk-%E5%88%9D%E5%AD%B8%E6%8C%87%E5%8D%97-%E4%BA%8C-%E7%94%B1%E5%A4%96%E8%80%8C%E5%85%A7-%E5%BE%9E%E8%AA%9E%E6%96%99%E5%BA%AB%E5%88%B0%E5%AD%97%E8%A9%9E%E6%8B%86%E8%A7%A3-%E4%B8%8A%E6%89%8B%E7%AF%87-e9c632d2b16a
+
+
+Datasets
+https://github.com/JafferWilson/Process-Data-of-CNN-DailyMail
 
 '''
 if __name__ == "__main__":

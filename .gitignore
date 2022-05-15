@@ -5,3 +5,4 @@ history
 *.zip
 data
 en_US
+cnn_stories_tokenized/*.story
