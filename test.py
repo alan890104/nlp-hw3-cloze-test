@@ -8,10 +8,10 @@ from glob import glob
 from typing import Any, Dict, List, Tuple, Union
 
 import spacy
-from spacy.tokens import Doc, Span, Token
 from nltk.lm import MLE, KneserNeyInterpolated, Laplace, WittenBellInterpolated
-from nltk.lm.preprocessing import everygrams, padded_everygram_pipeline
+from nltk.lm.preprocessing import everygrams
 from nltk.util import flatten
+from spacy.tokens import Doc, Span, Token
 from tqdm import tqdm
 
 import utils
@@ -52,6 +52,7 @@ def LoadExternalCorpus(max_amount:int=50000)->List[str]:
     '''
     Return external training set of cnn data
     '''
+    # TODO : 如果全部為0的比率很高，觀察加入external corpus能提升多少accuracy
     result: List[str]= []
     print("- Start Loading External Training Set [CNN]")
     external = glob("./cnn_stories_tokenized/*.story")
@@ -199,7 +200,6 @@ def Train(n_gram: int, tknz: List[List[str]], model: Union[str, Model] = "MLE", 
     assert model in ["MLE", "Laplace", "KneserNeyInterpolated",
                      "WittenBellInterpolated"] or model in [MLE, Laplace, KneserNeyInterpolated, WittenBellInterpolated], "undefined model type"
     print("- Start Padding")
-    # train_data, padded_sents = padded_everygram_pipeline(n_gram, tknz)
     all_grams = [list(everygrams(tz, max_len=n_gram)) for tz in tknz]
     all_vocab = flatten(tknz)
     print("- Start Training with model {}".format(model))
@@ -388,9 +388,6 @@ https://www.cl.uni-heidelberg.de/courses/ss15/smt/scribe6.pdf
 '''
 if __name__ == "__main__":
     # Models: ["MLE", "Laplace", "KneserNeyInterpolated","WittenBellInterpolated"]
-
-    # TODO : 考慮 dep帶來的grams
-    # TODO : 如果全部為0的比率很高，觀察加入external corpus能提升多少accuracy
 
     # Solve : 觀察 使用/不使用 stop words 之後的 統計前10名和accuracy
     # Solve : 觀察 全部四個選項為0的比率占多少(代表其他都是random湊的), 在MLE是14000左右
