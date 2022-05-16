@@ -30,11 +30,11 @@ PUNCTUATON.remove('_')
 EXCEPTION_DOT = {"a.m.", "p.m.", "e.g.",
                  "mr.", "ms.", "mrs.", "dr.", "st.", "u.s."}
 
-LEMMA_GROUP = {"VERB","NOUN"}
 
 # Global Variable
 assert spacy.prefer_gpu(), "Cannot run with gpu"
-NLP = spacy.load('en_core_web_sm', disable=["tok2vec", "ner", "textcat"])
+NLP = spacy.load('en_core_web_sm', disable=[
+                 "tok2vec", "ner", "lemmatizer", "textcat"])
 
 # Dubug Variable
 DEBUG_ALL_ZERO = 0
@@ -55,20 +55,18 @@ def LoadRawJson() -> List[dict]:
             pbar.update(1)
     return raw
 
-def LoadExternalCorpus(max_amount:int=50000)->List[str]:
+
+def LoadExternalCorpus() -> List[str]:
     '''
     Return external training set of cnn data
     '''
     # TODO : 如果全部為0的比率很高，觀察加入external corpus能提升多少accuracy
-    result: List[str]= []
-    print("- Start Loading External Training Set [CNN]")
-    external = glob("./cnn_stories_tokenized/*.story")
-    with tqdm(total=max_amount) as pbar:
-        for e in external[:max_amount]:
-            with open(e, 'r',encoding="utf-8") as F:
-                result.append(F.read())
-            pbar.update(1)
+    result: List[str] = []
+    print("- Start Loading External Training Set [BLOGS]")
+    with open("./en_US/en_US.blogs.txt", 'r', encoding="utf-8") as F:
+        result = [f.strip() for f in F.readlines()]
     return result
+
 
 def TrainTestSplit(dataset: List[dict], test_size: Union[int, float] = 0.1, seed: int = None) -> Tuple[list, list]:
     '''
@@ -126,20 +124,11 @@ def ResolveTestingSet(dataset: List[dict]) -> Tuple[List[Dict[str, str]], Dict[s
         })
     return testing_set, answers_set
 
-def is_verb(token: Token) -> bool:
-    '''
-    determine whether a token is a verb (ignore AUX with their head is VERB)
-    ex: "I have been watching Namin for a year." =>  return (watching, )
-    '''
-    if token.pos_ == "VERB":
-        return True
-    if token.pos_ == "AUX" and token.head.pos_ != "VERB":
-        return True
-    return False
 
-def preprocess(context: str) -> Tuple[List[List[Union[str, Any]]], ]:
+def preprocess(context: str, testing: bool = False) -> Tuple[List[List[Union[str, Any]]], ]:
     '''
     prepocess text for tokenizing
+    when testing mode, do not add dependency bigram
     '''
     # TODO : 先對context做去除所有符號和數字並且保留符號 ' , . _ -和空格
     # TODO : 刪掉兩個 . 以上的
@@ -153,45 +142,25 @@ def preprocess(context: str) -> Tuple[List[List[Union[str, Any]]], ]:
     context = re.sub(r'(\.){2,}', ' ', context)
     context = re.sub(r'(\'){2,}', ' ', context)
     context = re.sub(r'(-){2,}', ' ', context)
-    context = context.lstrip('-')
-    context = context.rstrip('-')
+    context = context.strip('-')
     docs = NLP(context)
-    verbs:List[Token] = []
     # Do normal process
     for sent in docs.sents:
-        tkn = []
-        for x in sent:
-            if x.is_space or x.text in PUNCTUATON:
-                continue
-            elif x.pos_ in LEMMA_GROUP:
-                # TODO : 只對NOUN和VERB(不包含AUX)做lemmatize
-                tkn.append(x.lemma_.lower())
-            else:
-                tkn.append(x.lower_)
-            if is_verb(x): verbs.append(x)
         tkn = [x.lower_ for x in sent if (
-            not x.is_space) and (not x.lower_ in PUNCTUATON)]
+            not x.is_space) and (not x.text in PUNCTUATON)]
+
         clean: List[str] = []
         for dirty in tkn:
             if dirty in EXCEPTION_DOT:
                 clean.append(dirty)
             else:
                 for d in dirty.split('.'):
+                    if len(d)==1 and d not in {"i","a","_"}: continue
                     if len(d) > 0:
+                        d = d.replace("'m",'am').replace("n't","not").replace("'ve","have")
                         clean.append(d)
         result.append(clean)
 
-    # TODO : Add Dependency context (only verb)
-    deps:List[List[str]] = []
-    for v in verbs:
-        for left in v.lefts:
-            elem = left.lemma_ if x.pos_ in LEMMA_GROUP else left.lower_
-            deps.append([elem, v.lemma_])
-        for right in v.rights:
-            elem = right.lemma_ if x.pos_ in  LEMMA_GROUP else right.lower_
-            deps.append([v.lemma_, elem])
-    result.extend(deps)
-    
     return result
 
 
@@ -242,7 +211,7 @@ def Prediction(model: Model, n_gram: int, dataset: List[dict],) -> Dict[str, str
         for question in dataset:
             start_row: int = 0
             start_idx: int = 0
-            article_token = preprocess(question["article"])
+            article_token = preprocess(question["article"], testing=True)
             for (ques_num, ops) in question["options"].items():
                 argmax_i, start_row, start_idx = getMaximumScore(
                     model, n_gram, start_row, start_idx, article_token, ops)
@@ -275,7 +244,8 @@ def getMaximumScore(model: Model, max_ngram: int, start_row: int, start_idx: int
         assert len(subset) <= max_ngram-1, "lenght of subset({}) needs to be equal to or less than max_ngram-1({})".format(
             len(subset), max_ngram-1)
         # Perform lemmatize on each option (maybe apply on NOUN?)
-        lower_op = NLP(op)[0].lower_
+        tmp = NLP(op)[0]
+        lower_op = tmp.lower_
         if idx > 0 and idx < len(article_token[row])-1:
             # TODO : 計算maxScore時不只以 XX_ 的方式取得ngram的score, 也同時考慮 _XX 和 X_X
             middle: List[str] = subset + [lower_op]
@@ -409,6 +379,9 @@ https://github.com/JafferWilson/Process-Data-of-CNN-DailyMail
 Introducing About Interpolations
 https://www.cl.uni-heidelberg.de/courses/ss15/smt/scribe6.pdf
 
+Hidden Markov
+https://analyticsindiamag.com/a-guide-to-hidden-markov-model-and-its-applications-in-nlp/
+
 '''
 if __name__ == "__main__":
     # Models: ["MLE", "Laplace", "KneserNeyInterpolated","WittenBellInterpolated"]
@@ -485,10 +458,10 @@ if __name__ == "__main__":
         tknz = Tokenizer(training_set+extra_training_set)
         for model_name in models:
             model = Train(ngram, tknz, model_name)
-            ans = Solve(model, ngram, "result_{}_ngram{}.csv".format(
+            ans = Solve(model, ngram, "result_{}_ngram{}_nolemma_part.csv".format(
                 model_name, ngram))
             utils.dump_pkl(
-                model, "./hw3/model/generate_{}.pkl".format(model_name))
+                model, "./hw3/model/generate_{}_nolemma_part.pkl".format(model_name))
             print("===============INFORMATION===============")
             print("All zero rate: {}".format(
                 round(DEBUG_ALL_ZERO/len(ans), 2)))
