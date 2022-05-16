@@ -405,6 +405,9 @@ https://github.com/JafferWilson/Process-Data-of-CNN-DailyMail
 Introducing About Interpolations
 https://www.cl.uni-heidelberg.de/courses/ss15/smt/scribe6.pdf
 
+Hidden Markov
+https://analyticsindiamag.com/a-guide-to-hidden-markov-model-and-its-applications-in-nlp/
+
 '''
 if __name__ == "__main__":
     # Models: ["MLE", "Laplace", "KneserNeyInterpolated","WittenBellInterpolated"]
