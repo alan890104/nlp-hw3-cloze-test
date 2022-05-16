@@ -37,6 +37,9 @@ DEBUG_ALL_ZERO = 0
 
 
 def LoadRawJson() -> List[dict]:
+    '''
+    Load jsons from "hw3/train/*.json"
+    '''
     print("- Start Loading Jsons")
     src = glob(os.path.join("./hw3/train", "*.json"))
     raw: List[dict] = []
@@ -64,6 +67,9 @@ def LoadExternalCorpus(max_amount:int=50000)->List[str]:
     return result
 
 def TrainTestSplit(dataset: List[dict], test_size: Union[int, float] = 0.1, seed: int = None) -> Tuple[list, list]:
+    '''
+    Train test split with test_size
+    '''
     random.seed(seed)
     size: int = 0
     if isinstance(test_size, int):
@@ -83,6 +89,9 @@ def TrainTestSplit(dataset: List[dict], test_size: Union[int, float] = 0.1, seed
 
 
 def ResolveTrainingSet(dataset: List[dict]) -> List[str]:
+    '''
+    Recover training corpus from raw json data
+    '''
     training_set: List[str] = []
     for data in dataset:
         result: str = data["article"]
@@ -197,6 +206,9 @@ def Tokenizer(contexts: List[str]) -> List[List[str]]:
 
 
 def Train(n_gram: int, tknz: List[List[str]], model: Union[str, Model] = "MLE", **kwargs) -> Model:
+    '''
+    Train with selected model
+    '''
     assert model in ["MLE", "Laplace", "KneserNeyInterpolated",
                      "WittenBellInterpolated"] or model in [MLE, Laplace, KneserNeyInterpolated, WittenBellInterpolated], "undefined model type"
     print("- Start Padding")
@@ -217,6 +229,9 @@ def Train(n_gram: int, tknz: List[List[str]], model: Union[str, Model] = "MLE", 
 
 
 def Prediction(model: Model, n_gram: int, dataset: List[dict],) -> Dict[str, str]:
+    '''
+    Call getMaximumScore to selected argmax(scores of options)
+    '''
     print("- Start Prediction")
     answer_dict: Dict[str, str] = {}
     with tqdm(total=len(dataset)) as pbar:
@@ -235,6 +250,8 @@ def Prediction(model: Model, n_gram: int, dataset: List[dict],) -> Dict[str, str
 
 def getMaximumScore(model: Model, max_ngram: int, start_row: int, start_idx: int, article_token: List[List[Union[str, Any]]], ops: List[str]) -> Tuple[int, int]:
     '''
+    The main scoring function
+
     return (argmax element,new start_row, new start_idx)
     NOTE: the article_token will be modified
     '''
@@ -327,6 +344,9 @@ def Evaluation(pred: Dict[str, str], actual: Dict[str, str]):
 
 
 def Solve(model: Model, n_gram: int, path: str = "result.csv") -> Dict[str, str]:
+    '''
+    Solve for submitting answers
+    '''
     dataset: List[dict] = []
     test_list = glob(os.path.join("./hw3/test", "*.json"))
     print("- Start Solving")
@@ -340,6 +360,9 @@ def Solve(model: Model, n_gram: int, path: str = "result.csv") -> Dict[str, str]
 
 
 def Analysis(path: str):
+    '''
+    Show most common and next word prediction(length=15)
+    '''
     model: Model = utils.load_pkl(path)
     most = model.vocab.counts.most_common(10)
     maximum = max([v for _, v in most])
