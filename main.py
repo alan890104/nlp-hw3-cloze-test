@@ -11,10 +11,13 @@ import string
 from glob import glob
 from typing import Any, Dict, List, Tuple, Union
 
-from nltk.lm import MLE, KneserNeyInterpolated, Laplace, WittenBellInterpolated
-from nltk.lm.preprocessing import padded_everygram_pipeline
-from tqdm import tqdm
 import spacy
+from nltk.lm import MLE, KneserNeyInterpolated, Laplace, WittenBellInterpolated
+from nltk.lm.preprocessing import everygrams
+from nltk.util import flatten
+from spacy.tokens import Doc, Span, Token
+from tqdm import tqdm
+
 import utils
 
 # Type define
@@ -27,6 +30,8 @@ PUNCTUATON.remove('_')
 EXCEPTION_DOT = {"a.m.", "p.m.", "e.g.",
                  "mr.", "ms.", "mrs.", "dr.", "st.", "u.s."}
 
+LEMMA_GROUP = {"VERB","NOUN"}
+
 # Global Variable
 assert spacy.prefer_gpu(), "Cannot run with gpu"
 NLP = spacy.load('en_core_web_sm', disable=["tok2vec", "ner", "textcat"])
@@ -36,6 +41,9 @@ DEBUG_ALL_ZERO = 0
 
 
 def LoadRawJson() -> List[dict]:
+    '''
+    Load jsons from "hw3/train/*.json"
+    '''
     print("- Start Loading Jsons")
     src = glob(os.path.join("./hw3/train", "*.json"))
     raw: List[dict] = []
@@ -47,9 +55,25 @@ def LoadRawJson() -> List[dict]:
             pbar.update(1)
     return raw
 
-
+def LoadExternalCorpus(max_amount:int=50000)->List[str]:
+    '''
+    Return external training set of cnn data
+    '''
+    # TODO : 如果全部為0的比率很高，觀察加入external corpus能提升多少accuracy
+    result: List[str]= []
+    print("- Start Loading External Training Set [CNN]")
+    external = glob("./cnn_stories_tokenized/*.story")
+    with tqdm(total=max_amount) as pbar:
+        for e in external[:max_amount]:
+            with open(e, 'r',encoding="utf-8") as F:
+                result.append(F.read())
+            pbar.update(1)
+    return result
 
 def TrainTestSplit(dataset: List[dict], test_size: Union[int, float] = 0.1, seed: int = None) -> Tuple[list, list]:
+    '''
+    Train test split with test_size
+    '''
     random.seed(seed)
     size: int = 0
     if isinstance(test_size, int):
@@ -68,8 +92,11 @@ def TrainTestSplit(dataset: List[dict], test_size: Union[int, float] = 0.1, seed
     return train_set, test_set
 
 
-def ResolveTrainingSet(dataset: List[dict]) -> List[List[str]]:
-    training_set: List[List[str]] = []
+def ResolveTrainingSet(dataset: List[dict]) -> List[str]:
+    '''
+    Recover training corpus from raw json data
+    '''
+    training_set: List[str] = []
     for data in dataset:
         result: str = data["article"]
         answers: List[str] = [data["answers"][_]
@@ -99,27 +126,51 @@ def ResolveTestingSet(dataset: List[dict]) -> Tuple[List[Dict[str, str]], Dict[s
         })
     return testing_set, answers_set
 
+def is_verb(token: Token) -> bool:
+    '''
+    determine whether a token is a verb (ignore AUX with their head is VERB)
+    ex: "I have been watching Namin for a year." =>  return (watching, )
+    '''
+    if token.pos_ == "VERB":
+        return True
+    if token.pos_ == "AUX" and token.head.pos_ != "VERB":
+        return True
+    return False
 
-def preprocess(context: str) -> List[List[Union[str, Any]]]:
+def preprocess(context: str) -> Tuple[List[List[Union[str, Any]]], ]:
     '''
     prepocess text for tokenizing
     '''
     # TODO : 先對context做去除所有符號和數字並且保留符號 ' , . _ -和空格
     # TODO : 刪掉兩個 . 以上的
     # TODO : 刪掉兩個 - 以上的
+    # TODO : 刪掉兩個 ' 以上的
     # TODO : 刪除前綴和後綴的-
     # TODO : 由於有些字母依然會包含 . 所沒有在EXCEPTION_DOT中的要做split把點去掉
     result: List[List[Union[str, Any]]] = []
     context = re.sub('\d+', " ", context)
     context = re.sub(r"[^\w' ,._-]", " ", context)
     context = re.sub(r'(\.){2,}', ' ', context)
+    context = re.sub(r'(\'){2,}', ' ', context)
     context = re.sub(r'(-){2,}', ' ', context)
     context = context.lstrip('-')
     context = context.rstrip('-')
     docs = NLP(context)
+    verbs:List[Token] = []
+    # Do normal process
     for sent in docs.sents:
-        tkn = [x.lower_ for x in sent if (not x.is_space)
-               and (not x.lower_ in PUNCTUATON)]
+        tkn = []
+        for x in sent:
+            if x.is_space or x.text in PUNCTUATON:
+                continue
+            elif x.pos_ in LEMMA_GROUP:
+                # TODO : 只對NOUN和VERB(不包含AUX)做lemmatize
+                tkn.append(x.lemma_.lower())
+            else:
+                tkn.append(x.lower_)
+            if is_verb(x): verbs.append(x)
+        tkn = [x.lower_ for x in sent if (
+            not x.is_space) and (not x.lower_ in PUNCTUATON)]
         clean: List[str] = []
         for dirty in tkn:
             if dirty in EXCEPTION_DOT:
@@ -129,6 +180,18 @@ def preprocess(context: str) -> List[List[Union[str, Any]]]:
                     if len(d) > 0:
                         clean.append(d)
         result.append(clean)
+
+    # TODO : Add Dependency context (only verb)
+    deps:List[List[str]] = []
+    for v in verbs:
+        for left in v.lefts:
+            elem = left.lemma_ if x.pos_ in LEMMA_GROUP else left.lower_
+            deps.append([elem, v.lemma_])
+        for right in v.rights:
+            elem = right.lemma_ if x.pos_ in  LEMMA_GROUP else right.lower_
+            deps.append([v.lemma_, elem])
+    result.extend(deps)
+    
     return result
 
 
@@ -147,10 +210,14 @@ def Tokenizer(contexts: List[str]) -> List[List[str]]:
 
 
 def Train(n_gram: int, tknz: List[List[str]], model: Union[str, Model] = "MLE", **kwargs) -> Model:
+    '''
+    Train with selected model
+    '''
     assert model in ["MLE", "Laplace", "KneserNeyInterpolated",
                      "WittenBellInterpolated"] or model in [MLE, Laplace, KneserNeyInterpolated, WittenBellInterpolated], "undefined model type"
     print("- Start Padding")
-    train_data, padded_sents = padded_everygram_pipeline(n_gram, tknz)
+    all_grams = [list(everygrams(tz, max_len=n_gram)) for tz in tknz]
+    all_vocab = flatten(tknz)
     print("- Start Training with model {}".format(model))
     basic_model: Model
     if model == "MLE" or model == MLE:
@@ -158,14 +225,17 @@ def Train(n_gram: int, tknz: List[List[str]], model: Union[str, Model] = "MLE", 
     elif model == "Laplace" or model == Laplace:
         basic_model = Laplace(n_gram, **kwargs)
     elif model == "KneserNeyInterpolated" or model == KneserNeyInterpolated:
-        basic_model = KneserNeyInterpolated(ngram, **kwargs)
+        basic_model = KneserNeyInterpolated(n_gram, **kwargs)
     elif model == "WittenBellInterpolated" or model == WittenBellInterpolated:
-        basic_model = WittenBellInterpolated(ngram, **kwargs)
-    basic_model.fit(train_data, padded_sents)
+        basic_model = WittenBellInterpolated(n_gram, **kwargs)
+    basic_model.fit(all_grams, all_vocab)
     return basic_model
 
 
 def Prediction(model: Model, n_gram: int, dataset: List[dict],) -> Dict[str, str]:
+    '''
+    Call getMaximumScore to selected argmax(scores of options)
+    '''
     print("- Start Prediction")
     answer_dict: Dict[str, str] = {}
     with tqdm(total=len(dataset)) as pbar:
@@ -184,6 +254,8 @@ def Prediction(model: Model, n_gram: int, dataset: List[dict],) -> Dict[str, str
 
 def getMaximumScore(model: Model, max_ngram: int, start_row: int, start_idx: int, article_token: List[List[Union[str, Any]]], ops: List[str]) -> Tuple[int, int]:
     '''
+    The main scoring function
+
     return (argmax element,new start_row, new start_idx)
     NOTE: the article_token will be modified
     '''
@@ -202,10 +274,17 @@ def getMaximumScore(model: Model, max_ngram: int, start_row: int, start_idx: int
         subset: List[str] = article_token[row][max(0, idx-max_ngram+1):idx]
         assert len(subset) <= max_ngram-1, "lenght of subset({}) needs to be equal to or less than max_ngram-1({})".format(
             len(subset), max_ngram-1)
-        # Perform lemmatize on each option
-        lemma_op = NLP(op)[0].lower_
-        score = model.score(lemma_op, subset)
-        scores[i] = (score)
+        # Perform lemmatize on each option (maybe apply on NOUN?)
+        lower_op = NLP(op)[0].lower_
+        if idx > 0 and idx < len(article_token[row])-1:
+            # TODO : 計算maxScore時不只以 XX_ 的方式取得ngram的score, 也同時考慮 _XX 和 X_X
+            middle: List[str] = subset + [lower_op]
+            next_word: str = article_token[row][idx+1]
+            score = (model.score(lower_op, subset) +
+                     model.score(next_word, middle))/2
+        else:
+            score = model.score(lower_op, subset)
+        scores[i] = score
 
     if all(s == 0 for s in scores):
         DEBUG_ALL_ZERO += 1
@@ -269,6 +348,9 @@ def Evaluation(pred: Dict[str, str], actual: Dict[str, str]):
 
 
 def Solve(model: Model, n_gram: int, path: str = "result.csv") -> Dict[str, str]:
+    '''
+    Solve for submitting answers
+    '''
     dataset: List[dict] = []
     test_list = glob(os.path.join("./hw3/test", "*.json"))
     print("- Start Solving")
@@ -283,11 +365,22 @@ def Solve(model: Model, n_gram: int, path: str = "result.csv") -> Dict[str, str]
 
 def Analysis(path: str):
     '''
-    Find top ten words with/without stop words
+    Show most common and next word prediction(length=15)
     '''
     model: Model = utils.load_pkl(path)
-    # print(preprocess("he is my husband----------------a sanders.she is a doctor."))
-    print([x for x in model.counts.unigrams])
+    most = model.vocab.counts.most_common(10)
+    maximum = max([v for _, v in most])
+    print("===============MOST COMMON==================")
+    for k, v in most:
+        print("{:<15s}\t{:<20s}\t{}".format(k, '█'*int((v/maximum)*20), v))
+    print("================Generation===================")
+    sent1: str = model.generate(15, text_seed=['this', 'is'])
+    sent2: str = model.generate(15, text_seed=['he', 'said'])
+    sent3: str = model.generate(15, text_seed=['she', 'said'])
+    print(" * Sentence1:\n\tthis is {}".format(' '.join(sent1)))
+    print(" * Sentence2:\n\the said {}".format(' '.join(sent2)))
+    print(" * Sentence3:\n\tshe said {}".format(' '.join(sent3)))
+    print("=============================================")
 
 
 '''
@@ -309,19 +402,24 @@ https://aclanthology.org/O01-1002.pdf
 
 https://medium.com/pyladies-taiwan/nltk-%E5%88%9D%E5%AD%B8%E6%8C%87%E5%8D%97-%E4%BA%8C-%E7%94%B1%E5%A4%96%E8%80%8C%E5%85%A7-%E5%BE%9E%E8%AA%9E%E6%96%99%E5%BA%AB%E5%88%B0%E5%AD%97%E8%A9%9E%E6%8B%86%E8%A7%A3-%E4%B8%8A%E6%89%8B%E7%AF%87-e9c632d2b16a
 
+
+Datasets
+https://github.com/JafferWilson/Process-Data-of-CNN-DailyMail
+
+Introducing About Interpolations
+https://www.cl.uni-heidelberg.de/courses/ss15/smt/scribe6.pdf
+
 '''
 if __name__ == "__main__":
     # Models: ["MLE", "Laplace", "KneserNeyInterpolated","WittenBellInterpolated"]
-    # TODO : 觀察 lemmatize的影響，降低precision&提升recall的比重是否合理 (options時態)
-    # TODO : 考慮 dep帶來的grams
-    # TODO : 觀察 使用/不使用 stop words 之後的 統計前10名和accuracy
-    # TODO : 觀察 全部四個選項為0的比率占多少(代表其他都是random湊的)
-    # TODO : 如果全部為0的比率很高，觀察加入external corpus能提升多少accuracy
-    # TODO : 計算maxScore時不只以 XX_ 的方式取得ngram的score, 也同時考慮 _XX 和 X_X
 
-    # Bug [ ] : spacy 無法分辨破折號 "he is my husband----------------a sanders.she is a doctor."
+    # Solve : 觀察 使用/不使用 stop words 之後的 統計前10名和accuracy
+    # Solve : 觀察 全部四個選項為0的比率占多少(代表其他都是random湊的), 在MLE是14000左右
+    # Solve : lemmatize可能只能對名詞用
+
+    # Bug [ok] : spacy 無法分辨破折號 "he is my husband----------------a sanders.she is a doctor."
     # Bug [ok] : spacy 句號沒辦法分開: 不可以先用lower再用nlp, 模型無法分辨大小寫。
-    # BUg : mother's will be [mother,'s]
+    # BUg [  ]: mother's will be [mother,'s]
 
     '''
     Train      Mode: python ./test.py -m [model name]
@@ -330,7 +428,7 @@ if __name__ == "__main__":
     '''
     parser = argparse.ArgumentParser()
     parser.add_argument("-n", "--ngram", type=int,
-                        help="maximum order of ngram, default=3", choices=[1, 2, 3, 4, 5], default=3)
+                        help="maximum order of ngram, default=4", choices=[1, 2, 3, 4, 5], default=4)
     parser.add_argument("-s", "--submit", type=str,
                         help="for only generating kaggle submission, default to 'false': train and validate", default='false')
     parser.add_argument("-a", "--analysis", type=str,
@@ -354,6 +452,7 @@ if __name__ == "__main__":
             Analysis(analysis_path)
         else:
             dataset = LoadRawJson()
+            extra_training_set = LoadExternalCorpus()
             history = {"MLE": 0, "Laplace": 0,
                        "KneserNeyInterpolated": 0, "WittenBellInterpolated": 0}
             pending_model: List[str] = ["MLE", "Laplace",
@@ -361,9 +460,11 @@ if __name__ == "__main__":
             for model_name in models:
                 score = 0
                 for i in range(epoch):
+                    DEBUG_ALL_ZERO = 0
                     training_set, testing_set = TrainTestSplit(
                         dataset, test_size=0.3)
                     training_set = ResolveTrainingSet(training_set)
+                    training_set += extra_training_set
                     testing_set, actual = ResolveTestingSet(testing_set)
                     model = Train(ngram, Tokenizer(training_set), model_name)
                     preds = Prediction(model, ngram, testing_set)
@@ -379,11 +480,15 @@ if __name__ == "__main__":
         # This is my birthday
         random.seed(890104)
         dataset = LoadRawJson()
+        extra_training_set = LoadExternalCorpus()
         training_set = ResolveTrainingSet(dataset)
-        tknz = Tokenizer(training_set)
+        tknz = Tokenizer(training_set+extra_training_set)
         for model_name in models:
             model = Train(ngram, tknz, model_name)
-            ans = Solve(model, ngram, "result_{}_ngram{}.csv".format(model_name, ngram))
-            utils.dump_pkl(model, "./hw3/model/generate_{}.pkl".format(model_name))
+            ans = Solve(model, ngram, "result_{}_ngram{}.csv".format(
+                model_name, ngram))
+            utils.dump_pkl(
+                model, "./hw3/model/generate_{}.pkl".format(model_name))
             print("===============INFORMATION===============")
-            print("All zero rate: {}".format(round(DEBUG_ALL_ZERO/len(ans),2)))
+            print("All zero rate: {}".format(
+                round(DEBUG_ALL_ZERO/len(ans), 2)))
