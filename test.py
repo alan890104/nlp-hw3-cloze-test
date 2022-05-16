@@ -263,7 +263,7 @@ def getMaximumScore(model: Model, max_ngram: int, start_row: int, start_idx: int
                      model.score(next_word, middle))/2
         else:
             score = model.score(lower_op, subset)
-        scores[i] = (score)
+        scores[i] = score
 
     if all(s == 0 for s in scores):
         DEBUG_ALL_ZERO += 1
@@ -340,9 +340,6 @@ def Solve(model: Model, n_gram: int, path: str = "result.csv") -> Dict[str, str]
 
 
 def Analysis(path: str):
-    '''
-    Find top ten words with/without stop words
-    '''
     model: Model = utils.load_pkl(path)
     most = model.vocab.counts.most_common(10)
     maximum = max([v for _, v in most])
@@ -353,9 +350,9 @@ def Analysis(path: str):
     sent1: str = model.generate(15, text_seed=['this', 'is'])
     sent2: str = model.generate(15, text_seed=['he', 'said'])
     sent3: str = model.generate(15, text_seed=['she', 'said'])
-    print(" * Sentence1:\n\t{}".format(' '.join(sent1)))
-    print(" * Sentence2:\n\t{}".format(' '.join(sent2)))
-    print(" * Sentence3:\n\t{}".format(' '.join(sent3)))
+    print(" * Sentence1:\n\tthis is {}".format(' '.join(sent1)))
+    print(" * Sentence2:\n\the said {}".format(' '.join(sent2)))
+    print(" * Sentence3:\n\tshe said {}".format(' '.join(sent3)))
     print("=============================================")
 
 
