@@ -181,10 +181,10 @@ def preprocess(context: str) -> Tuple[List[List[Union[str, Any]]], ]:
     deps:List[List[str]] = []
     for v in verbs:
         for left in v.lefts:
-            elem = left.lemma_ if x.pos_ in LEMMA_GROUP else left.lower_
+            elem = left.lemma_ if left.pos_ in LEMMA_GROUP else left.lower_
             deps.append([elem, v.lemma_])
         for right in v.rights:
-            elem = right.lemma_ if x.pos_ in  LEMMA_GROUP else right.lower_
+            elem = right.lemma_ if right.pos_ in  LEMMA_GROUP else right.lower_
             deps.append([v.lemma_, elem])
     result.extend(deps)
     
