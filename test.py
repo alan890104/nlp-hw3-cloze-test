@@ -153,7 +153,7 @@ def preprocess(context: str, testing: bool = False) -> Tuple[List[List[Union[str
                 for d in dirty.split('.'):
                     if len(d)==1 and d not in {"i","a","_"}: continue
                     if len(d) > 0:
-                        d.replace("'m",'am').replace("n't","not").replace("'re","are").replace("'ve","have")
+                        d = d.replace("'m",'am').replace("n't","not").replace("'re","are").replace("'ve","have")
                         clean.append(d)
         result.append(clean)
 
