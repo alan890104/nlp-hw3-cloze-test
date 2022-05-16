@@ -60,7 +60,7 @@ def LoadExternalCorpus() -> List[str]:
     result: List[str] = []
     print("- Start Loading External Training Set [CNN]")
     with open("./en_US/en_US.blogs.txt", 'r', encoding="utf-8") as F:
-        result = [f for f in F.readlines()]
+        result = [f.strip() for f in F.readlines()]
     return result
 
 
@@ -151,7 +151,7 @@ def preprocess(context: str, testing: bool = False) -> Tuple[List[List[Union[str
                 clean.append(dirty)
             else:
                 for d in dirty.split('.'):
-                    if len(d)==1 and d not in {"i","a"}: continue
+                    if len(d)==1 and d not in {"i","a","_"}: continue
                     if len(d) > 0:
                         d.replace("'m",'am').replace("n't","not").replace("'re","are").replace("'ve","have")
                         clean.append(d)
