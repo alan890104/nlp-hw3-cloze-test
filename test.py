@@ -30,7 +30,7 @@ LEMMA_GROUP = {"VERB","NOUN"}
 
 # Global Variable
 assert spacy.prefer_gpu(), "Cannot run with gpu"
-NLP = spacy.load('en_core_web_sm', disable=["tok2vec", "ner", "textcat"])
+NLP = spacy.load('en_core_web_sm', disable=[ "ner", "textcat"])
 
 # Dubug Variable
 DEBUG_ALL_ZERO = 0
@@ -365,11 +365,11 @@ def Analysis(path: str):
     Show most common and next word prediction(length=15)
     '''
     model: Model = utils.load_pkl(path)
-    most = model.vocab.counts.most_common(10)
+    most = model.vocab.counts.most_common(20)
     maximum = max([v for _, v in most])
     print("===============MOST COMMON==================")
     for k, v in most:
-        print("{:<15s}\t{:<20s}\t{}".format(k, '█'*int((v/maximum)*20), v))
+        print("{:<15s}\t{:<20s}\t{}".format(k, '█'*int((v/maximum)*30), v))
     print("================Generation===================")
     sent1: str = model.generate(15, text_seed=['this', 'is'])
     sent2: str = model.generate(15, text_seed=['he', 'said'])
