@@ -165,8 +165,9 @@ def preprocess(context: str) -> Tuple[List[List[Union[str, Any]]], ]:
             else:
                 tkn.append(x.lower_)
             if is_verb(x): verbs.append(x)
-        tkn = [x.lower_ for x in sent if (
-            not x.is_space) and (not x.lower_ in PUNCTUATON)]
+        # Error Fix 
+        # tkn = [x.lower_ for x in sent if (
+        #     not x.is_space) and (not x.lower_ in PUNCTUATON)]
         clean: List[str] = []
         for dirty in tkn:
             if dirty in EXCEPTION_DOT:
