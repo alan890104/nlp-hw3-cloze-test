@@ -1,3 +1,7 @@
+# Author: Yu-Lun Hsu
+# Student ID: 0716235
+# HW ID: Hw3
+# Due Date: 05/19/2022
 import argparse
 import json
 import os
@@ -153,7 +157,7 @@ def preprocess(context: str, testing: bool = False) -> Tuple[List[List[Union[str
                 for d in dirty.split('.'):
                     if len(d)==1 and d not in {"i","a","_"}: continue
                     if len(d) > 0:
-                        d = d.replace("'m",'am').replace("n't","not").replace("'ve","have")
+                        d = d.replace("'m",'am').replace("n't","not").replace("'ve","have").replace("'ll","will")
                         clean.append(d)
         result.append(clean)
 
@@ -454,10 +458,10 @@ if __name__ == "__main__":
         tknz = Tokenizer(training_set+extra_training_set)
         for model_name in models:
             model = Train(ngram, tknz, model_name)
-            ans = Solve(model, ngram, "result_{}_ngram{}_nolemma_part.csv".format(
+            ans = Solve(model, ngram, "result_{}_ngram{}_ll.csv".format(
                 model_name, ngram))
             utils.dump_pkl(
-                model, "./hw3/model/generate_{}_nolemma_part.pkl".format(model_name))
+                model, "./hw3/model/generate_{}_ll.pkl".format(model_name))
             print("===============INFORMATION===============")
             print("All zero rate: {}".format(
                 round(DEBUG_ALL_ZERO/len(ans), 2)))
